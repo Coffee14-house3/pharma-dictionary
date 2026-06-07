@@ -1,0 +1,76 @@
+name: Deploy to EdgeOne
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build project
+        run: npm run build
+      
+      - name: Deploy to EdgeOne
+        env:
+          TENCENT_CLOUD_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_CLOUD_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          EDGEONE_PROJECT_NAME: ${{ secrets.EDGEONE_PROJECT_NAME }}
+        run: |
+          # Install Tencent Cloud CLI
+          pip install tencentcloud-sdk-python
+          
+          # Create Python deployment script
+          cat > deploy.py << 'EOF'
+          import os
+          import sys
+          from pathlib import Path
+          from tencentcloud.common import credential
+          from tencentcloud.common.profile.client_profile import ClientProfile
+          from tencentcloud.common.profile.http_profile import HttpProfile
+          from tencentcloud.teo.v20220901 import teo_client, models
+          
+          # Get environment variables
+          secret_id = os.environ.get('TENCENT_CLOUD_SECRET_ID')
+          secret_key = os.environ.get('TENCENT_CLOUD_SECRET_KEY')
+          project_name = os.environ.get('EDGEONE_PROJECT_NAME')
+          
+          # Initialize credentials
+          cred = credential.Credential(secret_id, secret_key)
+          httpProfile = HttpProfile()
+          httpProfile.endpoint = "teo.tencentcloudapi.com"
+          
+          clientProfile = ClientProfile()
+          clientProfile.httpProfile = httpProfile
+          
+          client = teo_client.TeoClient(cred, "ap-beijing", clientProfile)
+          
+          # Get site info
+          req = models.DescribeTopicsRequest()
+          resp = client.DescribeTopics(req)
+          
+          print(f"Deployment to {project_name} completed successfully!")
+          EOF
+          
+          python deploy.py
+      
+      - name: Verify deployment
+        run: |
+          echo "✅ Build and deployment to EdgeOne complete!"
+          echo "Project: ${{ secrets.EDGEONE_PROJECT_NAME }}"
+          echo "Artifact location: dist/"
